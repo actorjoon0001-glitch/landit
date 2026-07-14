@@ -38,8 +38,11 @@ export default function LandMap() {
   const markersRef = useRef<Record<string, LeafletNS.Marker>>({});
   const LRef = useRef<typeof LeafletNS | null>(null);
 
-  const regions = ["전체", ...Array.from(new Set(LANDS.map((l) => l.region)))];
-  const shown = region === "전체" ? LANDS : LANDS.filter((l) => l.region === region);
+  // 시/도(광역) 단위로 지역 선택 — 예: "경기 가평" → "경기"
+  const province = (l: Land) => l.region.split(" ")[0];
+  const regions = ["전체", ...Array.from(new Set(LANDS.map(province)))];
+  const shown =
+    region === "전체" ? LANDS : LANDS.filter((l) => province(l) === region);
   const shownIds = shown.map((l) => l.id).join(",");
 
   // 지도 초기화 (1회) — 모든 매물 마커 생성
@@ -58,15 +61,13 @@ export default function LandMap() {
       });
       mapRef.current = map;
 
-      L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
-        {
-          subdomains: "abcd",
-          maxZoom: 19,
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        }
-      ).addTo(map);
+      // OSM 표준 타일 — 한국 지명이 한글로 표기됨
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        subdomains: "abc",
+        maxZoom: 19,
+        attribution:
+          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 기여자',
+      }).addTo(map);
 
       LANDS.forEach((l) => {
         const marker = L.marker([l.lat, l.lng], {
