@@ -44,6 +44,8 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
       const { UnrealBloomPass } = await import("three/addons/postprocessing/UnrealBloomPass.js");
       const { OutputPass } = await import("three/addons/postprocessing/OutputPass.js");
       const { SMAAPass } = await import("three/addons/postprocessing/SMAAPass.js");
+      const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
+      const { MeshoptDecoder } = await import("three/addons/libs/meshopt_decoder.module.js");
       const mount = mountRef.current;
       if (disposed || !mount) return;
 
@@ -289,21 +291,59 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
 
       const clearGroup = (g: THREE_NS.Group) => {
         for (let i = g.children.length - 1; i >= 0; i--) {
-          const c = g.children[i] as THREE_NS.Mesh;
+          const c = g.children[i];
           g.remove(c);
-          c.geometry?.dispose?.();
+          c.traverse((o) => {
+            const m = o as THREE_NS.Mesh;
+            m.geometry?.dispose?.();
+            const mm = m.material as THREE_NS.Material | THREE_NS.Material[] | undefined;
+            if (Array.isArray(mm)) mm.forEach((x) => x.dispose());
+            else mm?.dispose?.();
+          });
         }
       };
 
-      const buildHouse = (h: ModularHouse) => {
-        clearGroup(g3);
-        clearGroup(g4);
-        const hw = Math.min(3.6, 2.6 + h.areaPy / 24);
-        const hd = Math.min(3.0, 2.0 + h.areaPy / 40);
-        const slabTop = 0.5;
-        const wallH = 1.5;
-        const wallTop = slabTop + wallH;
+      // GLB 로더 (사용자 홈플래너 모델용)
+      const gltfLoader = new GLTFLoader();
+      try {
+        gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+      } catch {
+        /* meshopt 선택사항 */
+      }
+      let houseToken = 0;
 
+      const dimsOf = (h: ModularHouse) => ({
+        hw: Math.min(3.6, 2.6 + h.areaPy / 24),
+        hd: Math.min(3.0, 2.0 + h.areaPy / 40),
+        slabTop: 0.5,
+        wallH: 1.5,
+        wallTop: 2.0,
+      });
+
+      // 사용자 GLB 모델을 기초 위에 정규화 배치
+      const placeModel = (obj: THREE_NS.Object3D, d: ReturnType<typeof dimsOf>) => {
+        const b0 = new THREE.Box3().setFromObject(obj);
+        const size = b0.getSize(new THREE.Vector3());
+        const target = Math.max(d.hw, d.hd);
+        const s = target / Math.max(size.x, size.z || 0.001);
+        obj.scale.setScalar(s);
+        const b1 = new THREE.Box3().setFromObject(obj);
+        const c = b1.getCenter(new THREE.Vector3());
+        obj.position.x -= c.x;
+        obj.position.z -= c.z;
+        obj.position.y += d.slabTop - b1.min.y;
+        obj.traverse((o) => {
+          const m = o as THREE_NS.Mesh;
+          if ((m as THREE_NS.Mesh).isMesh) {
+            m.castShadow = true;
+            m.receiveShadow = true;
+          }
+        });
+        g3.add(obj);
+      };
+
+      const buildProceduralHouse = (h: ModularHouse, d: ReturnType<typeof dimsOf>) => {
+        const { hw, hd, slabTop, wallH, wallTop } = d;
         // 벽
         g3.add(box(hw, wallH, hd, h.color, [0, slabTop + wallH / 2, 0], { rough: 0.78 }));
         // 문 + 문틀
@@ -358,7 +398,10 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
           roof.receiveShadow = true;
           g3.add(roof);
         }
+      };
 
+      const buildDeckLandscape = (h: ModularHouse, d: ReturnType<typeof dimsOf>) => {
+        const { hw, hd, slabTop } = d;
         // 4. 데크/포치/조경
         const deckX = hw / 2 + 0.75;
         g4.add(box(1.5, 0.16, hd, "#a9855c", [deckX, slabTop - 0.06, 0], { rough: 0.85 }));
@@ -405,6 +448,32 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         car.position.set(-1.3, 0, 2.0);
         car.rotation.y = 0.02;
         g4.add(car);
+      };
+
+      const buildHouse = (h: ModularHouse) => {
+        const d = dimsOf(h);
+        clearGroup(g3);
+        clearGroup(g4);
+        buildDeckLandscape(h, d);
+        const token = ++houseToken;
+        if (h.model) {
+          buildProceduralHouse(h, d); // GLB 로딩 중 임시 표시
+          gltfLoader.load(
+            h.model,
+            (gltf) => {
+              if (token !== houseToken) return;
+              clearGroup(g3);
+              placeModel(gltf.scene, d);
+              g3.scale.y = g3.userData.shown ? 1 : 0.001;
+            },
+            undefined,
+            () => {
+              /* 로드 실패 시 절차적 버전 유지 */
+            }
+          );
+        } else {
+          buildProceduralHouse(h, d);
+        }
       };
       buildHouse(house);
 

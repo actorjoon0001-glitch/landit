@@ -15,6 +15,9 @@ export interface ModularHouse {
   style: string;
   color: string; // 시뮬레이션 렌더 색
   roof: "gable" | "flat" | "mono";
+  // 사용자 홈플래너 산출물 (선택) — 있으면 절차적 지오메트리 대신 사용
+  model?: string; // 실시간 3D 모델 GLB 경로 (예: "/models/nordic-24.glb")
+  renders?: string[]; // 실사 렌더 이미지 경로 배열 (갤러리/턴테이블)
 }
 
 export interface Land {
