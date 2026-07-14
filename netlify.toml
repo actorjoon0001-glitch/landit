@@ -1,12 +1,9 @@
-# Netlify 배포 설정 — Next.js(App Router) on Netlify
-# @netlify/plugin-nextjs(Next Runtime)가 SSR/SSG 라우트를 처리합니다.
+# Netlify 배포 설정 — Next.js 정적 export
+# output: "export" 로 빌드하므로 서버리스 함수/런타임 없이 정적 파일만 배포합니다.
 
 [build]
   command = "npm run build"
-  publish = ".next"
+  publish = "out"
 
 [build.environment]
   NODE_VERSION = "20"
-
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
