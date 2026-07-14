@@ -1,128 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type * as THREE_NS from "three";
 import type { Land, ModularHouse } from "@/lib/data";
 
 /* ------------------------------------------------------------------ *
- * 아이소메트릭(2.5D) 시공 시뮬레이션
- * 큐보이드(3면 음영)를 월드 좌표(x,y,z)에 쌓아 SimCity 스타일 장면을 구성.
- * 타임라인 단계가 오를수록 토목 → 기초 → 주택 → 데크가 누적됩니다.
+ * 실시간 3D 시공 시뮬레이션 (Three.js)
+ * 원근 카메라 · 태양광 그림자 · PBR 재질 · 드래그 회전.
+ * 타임라인 단계가 오를수록 토목 → 기초 → 주택 → 데크가 지어집니다.
  * ------------------------------------------------------------------ */
-
-const T = 22; // 타일 반너비 (타일폭 2T)
-const ZH = 15; // z 1단위당 화면 높이
-const OX = 200;
-const OY = 120;
-
-type P2 = [number, number];
-const iso = (x: number, y: number, z = 0): P2 => [
-  OX + (x - y) * T,
-  OY + (x + y) * (T / 2) - z * ZH,
-];
-const pts = (arr: P2[]) => arr.map(([a, b]) => `${a.toFixed(1)},${b.toFixed(1)}`).join(" ");
-
-function adjust(hex: string, f: number) {
-  const n = parseInt(hex.replace("#", ""), 16);
-  const r = Math.min(255, Math.round(((n >> 16) & 255) * f));
-  const g = Math.min(255, Math.round(((n >> 8) & 255) * f));
-  const b = Math.min(255, Math.round((n & 255) * f));
-  return `rgb(${r},${g},${b})`;
-}
-
-// 큐보이드: 원점(x,y,z)에서 크기(w,d,h). 상단/좌(+y)/우(+x) 3면 음영.
-function box(
-  key: string,
-  x: number,
-  y: number,
-  z: number,
-  w: number,
-  d: number,
-  h: number,
-  color: string,
-  o: { top?: number; left?: number; right?: number; stroke?: string } = {}
-) {
-  const top = o.top ?? 1.12;
-  const left = o.left ?? 0.9;
-  const right = o.right ?? 0.72;
-  const stroke = o.stroke ?? "rgba(0,0,0,0.12)";
-  const topF = [iso(x, y, z + h), iso(x + w, y, z + h), iso(x + w, y + d, z + h), iso(x, y + d, z + h)];
-  const rightF = [iso(x + w, y, z), iso(x + w, y + d, z), iso(x + w, y + d, z + h), iso(x + w, y, z + h)];
-  const leftF = [iso(x, y + d, z), iso(x + w, y + d, z), iso(x + w, y + d, z + h), iso(x, y + d, z + h)];
-  return (
-    <g key={key}>
-      <polygon points={pts(leftF)} fill={adjust(color, left)} stroke={stroke} strokeWidth="0.4" />
-      <polygon points={pts(rightF)} fill={adjust(color, right)} stroke={stroke} strokeWidth="0.4" />
-      <polygon points={pts(topF)} fill={adjust(color, top)} stroke={stroke} strokeWidth="0.4" />
-    </g>
-  );
-}
-
-// 사각뿔(흙더미/나무 수관)
-function pyramid(key: string, x: number, y: number, z: number, w: number, d: number, h: number, color: string) {
-  const apex = iso(x + w / 2, y + d / 2, z + h);
-  const b0 = iso(x, y, z);
-  const b1 = iso(x + w, y, z);
-  const b2 = iso(x + w, y + d, z);
-  const b3 = iso(x, y + d, z);
-  return (
-    <g key={key}>
-      <polygon points={pts([b1, b2, apex])} fill={adjust(color, 0.72)} />
-      <polygon points={pts([b2, b3, apex])} fill={adjust(color, 0.9)} />
-      <polygon points={pts([b0, b1, apex])} fill={adjust(color, 1.1)} />
-    </g>
-  );
-}
-
-// 벽면 패널(창/문 등) — +y 면
-const panelY = (key: string, Y: number, a: number, b: number, c: number, d: number, fill: string, op = 1) => (
-  <polygon key={key} points={pts([iso(a, Y, c), iso(b, Y, c), iso(b, Y, d), iso(a, Y, d)])} fill={fill} opacity={op} stroke="rgba(0,0,0,0.15)" strokeWidth="0.25" />
-);
-// +x 면
-const panelX = (key: string, X: number, a: number, b: number, c: number, d: number, fill: string, op = 1) => (
-  <polygon key={key} points={pts([iso(X, a, c), iso(X, b, c), iso(X, b, d), iso(X, a, d)])} fill={fill} opacity={op} stroke="rgba(0,0,0,0.15)" strokeWidth="0.25" />
-);
-
-function tree(key: string, x: number, y: number, autumn = false) {
-  const foliage = autumn ? "#c9772f" : "#4f7a3f";
-  return (
-    <g key={key}>
-      {box(`${key}-t`, x, y, 0, 0.18, 0.18, 0.7, "#6b4a2e", { top: 1.05, left: 0.85, right: 0.7 })}
-      {pyramid(`${key}-f`, x - 0.35, y - 0.35, 0.6, 0.9, 0.9, 1.1, foliage)}
-    </g>
-  );
-}
-
-// 지붕
-function roof(key: string, hx: number, hy: number, hw: number, hd: number, ht: number, kind: ModularHouse["roof"]) {
-  const rh = 0.9;
-  if (kind === "flat") {
-    return box(key, hx - 0.1, hy - 0.1, ht, hw + 0.2, hd + 0.2, 0.18, "#3a3f45");
-  }
-  if (kind === "mono") {
-    const low = ht, high = ht + rh;
-    const slope = [iso(hx, hy, low), iso(hx + hw, hy, low), iso(hx + hw, hy + hd, high), iso(hx, hy + hd, high)];
-    const endX = [iso(hx + hw, hy, low), iso(hx + hw, hy + hd, high), iso(hx + hw, hy + hd, low)];
-    return (
-      <g key={key}>
-        <polygon points={pts(endX)} fill="#4a5058" />
-        <polygon points={pts(slope)} fill="#565d66" stroke="rgba(0,0,0,0.2)" strokeWidth="0.4" />
-      </g>
-    );
-  }
-  // gable — 용마루는 x축을 따라
-  const midY = hy + hd / 2;
-  const peak = ht + rh;
-  const leftSlope = [iso(hx, hy, ht), iso(hx + hw, hy, ht), iso(hx + hw, midY, peak), iso(hx, midY, peak)];
-  const rightSlope = [iso(hx, midY, peak), iso(hx + hw, midY, peak), iso(hx + hw, hy + hd, ht), iso(hx, hy + hd, ht)];
-  const gableNear = [iso(hx + hw, hy, ht), iso(hx + hw, hy + hd, ht), iso(hx + hw, midY, peak)];
-  return (
-    <g key={key}>
-      <polygon points={pts(leftSlope)} fill="#4a5058" stroke="rgba(0,0,0,0.2)" strokeWidth="0.4" />
-      <polygon points={pts(gableNear)} fill="#e7e3da" stroke="rgba(0,0,0,0.12)" strokeWidth="0.3" />
-      <polygon points={pts(rightSlope)} fill="#5b636d" stroke="rgba(0,0,0,0.2)" strokeWidth="0.4" />
-    </g>
-  );
-}
 
 const STAGES = [
   { key: "raw", label: "나대지", desc: "매물로 나온 원지반 상태" },
@@ -132,11 +18,388 @@ const STAGES = [
   { key: "finish", label: "포치·데크", desc: "데크·포치·조경 마감" },
 ];
 
+type Api = {
+  setStage: (n: number) => void;
+  rebuildHouse: (h: ModularHouse) => void;
+  dispose: () => void;
+};
+
 export default function Simulation({ land, house }: { land: Land; house: ModularHouse }) {
   const [stage, setStage] = useState(3);
   const [playing, setPlaying] = useState(false);
+  const [ready, setReady] = useState(false);
+  const mountRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<Api | null>(null);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 씬 초기화 (1회)
+  useEffect(() => {
+    let disposed = false;
+    (async () => {
+      const THREE = (await import("three")) as typeof THREE_NS;
+      const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+      const mount = mountRef.current;
+      if (disposed || !mount) return;
+
+      const W = mount.clientWidth || 600;
+      const H = mount.clientHeight || 380;
+
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color("#d7e8f2");
+      scene.fog = new THREE.Fog("#d7e8f2", 22, 46);
+
+      const camera = new THREE.PerspectiveCamera(34, W / H, 0.1, 100);
+      camera.position.set(8, 6.4, 8.5);
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(W, H);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.05;
+      mount.appendChild(renderer.domElement);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.target.set(0, 0.8, 0);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.enablePan = false;
+      controls.minDistance = 7;
+      controls.maxDistance = 22;
+      controls.minPolarAngle = 0.25;
+      controls.maxPolarAngle = 1.36;
+      controls.autoRotate = true;
+      controls.autoRotateSpeed = 0.55;
+      controls.addEventListener("start", () => (controls.autoRotate = false));
+
+      // 조명
+      const hemi = new THREE.HemisphereLight(0xcfe8ff, 0x6a5a3f, 0.75);
+      scene.add(hemi);
+      const sun = new THREE.DirectionalLight(0xfff2d8, 1.5);
+      sun.position.set(7, 10, 5);
+      sun.castShadow = true;
+      sun.shadow.mapSize.set(2048, 2048);
+      sun.shadow.camera.left = -8;
+      sun.shadow.camera.right = 8;
+      sun.shadow.camera.top = 8;
+      sun.shadow.camera.bottom = -8;
+      sun.shadow.camera.near = 1;
+      sun.shadow.camera.far = 34;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = 0.02;
+      scene.add(sun);
+
+      // 헬퍼
+      const mat = (color: string, o: { rough?: number; metal?: number; flat?: boolean; emissive?: string; emi?: number } = {}) =>
+        new THREE.MeshStandardMaterial({
+          color: new THREE.Color(color),
+          roughness: o.rough ?? 0.85,
+          metalness: o.metal ?? 0,
+          flatShading: o.flat ?? false,
+          emissive: o.emissive ? new THREE.Color(o.emissive) : new THREE.Color(0x000000),
+          emissiveIntensity: o.emi ?? 0,
+        });
+      const box = (
+        w: number, h: number, d: number, color: string,
+        pos: [number, number, number], o: Parameters<typeof mat>[1] & { cast?: boolean; recv?: boolean } = {}
+      ) => {
+        const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(color, o));
+        m.position.set(pos[0], pos[1], pos[2]);
+        m.castShadow = o.cast ?? true;
+        m.receiveShadow = o.recv ?? true;
+        return m;
+      };
+
+      // 원경 지면 + 대지
+      const groundMat = mat("#88ab63", { rough: 1 });
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), groundMat);
+      ground.rotation.x = -Math.PI / 2;
+      ground.position.y = -0.02;
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      const PLOT = 6;
+      scene.add(box(PLOT, 0.24, PLOT, "#6f9a52", [0, -0.12, 0], { rough: 1, cast: false }));
+      scene.add(box(PLOT - 0.1, 0.7, PLOT - 0.1, "#6b4f34", [0, -0.55, 0], { rough: 1, cast: false }));
+
+      // 스테이지 그룹
+      const groups: Record<string, THREE_NS.Group> = {};
+      const mkGroup = (key: string) => {
+        const g = new THREE.Group();
+        g.visible = false;
+        g.userData.rt = 0;
+        g.userData.shown = false;
+        scene.add(g);
+        groups[key] = g;
+        return g;
+      };
+      const g0 = mkGroup("g0");
+      const g1 = mkGroup("g1");
+      const gExcav = mkGroup("gExcav");
+      const g2 = mkGroup("g2");
+      const g3 = mkGroup("g3");
+      const g4 = mkGroup("g4");
+
+      // 나무
+      const tree = (x: number, z: number, s = 1) => {
+        const g = new THREE.Group();
+        g.add(box(0.22 * s, 0.8 * s, 0.22 * s, "#6b4a2e", [0, 0.4 * s, 0], { rough: 1 }));
+        const f = new THREE.Mesh(new THREE.IcosahedronGeometry(0.72 * s, 0), mat("#4f7a3f", { flat: true, rough: 0.95 }));
+        f.position.y = 1.2 * s;
+        f.scale.set(1, 1.15, 1);
+        f.castShadow = true;
+        f.receiveShadow = true;
+        g.add(f);
+        g.position.set(x, 0, z);
+        return g;
+      };
+
+      // 0. 나대지 자연물
+      g0.add(tree(-1.4, 1.0, 1.05));
+      g0.add(tree(1.2, -0.6, 0.9));
+      g0.add(tree(-0.6, -1.6, 1.0));
+      {
+        const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35, 0), mat("#9a948a", { flat: true }));
+        rock.position.set(1.4, 0.2, 1.2);
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        g0.add(rock);
+      }
+
+      // 1. 토목: 정지 패드 + 옹벽 + 흙더미
+      g1.add(box(4, 0.14, 4, "#b5946a", [0, 0.07, 0], { rough: 1, cast: false }));
+      g1.add(box(4.2, 0.58, 0.24, "#c2bdb0", [0, 0.29, 2.95], { rough: 0.95 }));
+      const pile = (x: number, z: number, h: number) => {
+        const c = new THREE.Mesh(new THREE.ConeGeometry(0.7, h, 7), mat("#a8875c", { flat: true, rough: 1 }));
+        c.position.set(x, h / 2, z);
+        c.castShadow = true;
+        c.receiveShadow = true;
+        return c;
+      };
+      g1.add(pile(-2.6, -0.4, 0.9));
+      g1.add(pile(2.7, -1.0, 0.75));
+
+      // 굴착기 (토목 단계에서만)
+      {
+        const ex = new THREE.Group();
+        ex.add(box(1.6, 0.32, 0.9, "#2f3237", [0, 0.16, 0], { rough: 0.7 }));
+        ex.add(box(1.05, 0.55, 0.95, "#f2c12e", [0, 0.55, 0], { rough: 0.5, metal: 0.1 }));
+        ex.add(box(0.62, 0.62, 0.72, "#e6b31f", [-0.15, 1.05, 0], { rough: 0.5 }));
+        ex.add(box(0.06, 0.42, 0.6, "#bfe3f0", [0.17, 1.08, 0], { rough: 0.2, metal: 0.3, emissive: "#bfe3f0", emi: 0.1 }));
+        // 붐/암/버킷
+        const boom = box(1.2, 0.16, 0.16, "#f2c12e", [0.8, 0.62, 0], { rough: 0.5 });
+        boom.rotation.z = -0.35;
+        ex.add(boom);
+        ex.add(box(0.36, 0.4, 0.44, "#c9971f", [1.5, 0.18, 0], { rough: 0.6, metal: 0.2 }));
+        ex.position.set(0.3, 0, 0.2);
+        ex.rotation.y = -0.5;
+        gExcav.add(ex);
+      }
+
+      // 2. 기초: 슬래브 + 피어
+      g2.add(box(4, 0.5, 4, "#cfcabf", [0, 0.25, 0], { rough: 0.9 }));
+      [-1.2, 0, 1.2].forEach((x) =>
+        [-1.2, 1.2].forEach((z) => g2.add(box(0.28, 0.14, 0.28, "#b7b1a4", [x, 0.57, z], { rough: 0.9 })))
+      );
+
+      // 3·4. 주택/데크 — house 의존, rebuildHouse로 채움
+      const clearGroup = (g: THREE_NS.Group) => {
+        for (let i = g.children.length - 1; i >= 0; i--) {
+          const c = g.children[i] as THREE_NS.Mesh;
+          g.remove(c);
+          c.geometry?.dispose?.();
+          const mm = c.material as THREE_NS.Material | THREE_NS.Material[] | undefined;
+          if (Array.isArray(mm)) mm.forEach((x) => x.dispose());
+          else mm?.dispose?.();
+        }
+      };
+
+      const buildHouse = (h: ModularHouse) => {
+        clearGroup(g3);
+        clearGroup(g4);
+        const hw = Math.min(3.6, 2.6 + h.areaPy / 24);
+        const hd = Math.min(3.0, 2.0 + h.areaPy / 40);
+        const slabTop = 0.5;
+        const wallH = 1.5;
+        const wallTop = slabTop + wallH;
+
+        // 벽
+        g3.add(box(hw, wallH, hd, h.color, [0, slabTop + wallH / 2, 0], { rough: 0.8 }));
+        // 문 (+z)
+        g3.add(box(0.62, 1.0, 0.08, "#5a4632", [0, slabTop + 0.5, hd / 2 + 0.02], { rough: 0.7 }));
+        // 창 (+z)
+        const glass = { rough: 0.15, metal: 0.35, emissive: "#bfe3f0", emi: 0.12 };
+        g3.add(box(0.6, 0.55, 0.06, "#bfe3f0", [-hw / 4 - 0.1, slabTop + 0.95, hd / 2 + 0.02], glass));
+        g3.add(box(0.6, 0.55, 0.06, "#bfe3f0", [hw / 4 + 0.1, slabTop + 0.95, hd / 2 + 0.02], glass));
+        // 창 (+x)
+        g3.add(box(0.06, 0.55, 0.7, "#bfe3f0", [hw / 2 + 0.02, slabTop + 0.95, -hd / 4], glass));
+        g3.add(box(0.06, 0.55, 0.7, "#bfe3f0", [hw / 2 + 0.02, slabTop + 0.95, hd / 4], glass));
+
+        // 지붕
+        const roofMat = mat("#3f454d", { rough: 0.7, flat: true });
+        if (h.roof === "flat") {
+          g3.add(box(hw + 0.3, 0.22, hd + 0.3, "#3a3f45", [0, wallTop + 0.11, 0], { rough: 0.7 }));
+          const para = mat("#4a505a", { rough: 0.8 });
+          void para;
+        } else {
+          const rh = 1.0;
+          const shape = new THREE.Shape();
+          if (h.roof === "mono") {
+            shape.moveTo(-hw / 2 - 0.15, 0);
+            shape.lineTo(hw / 2 + 0.15, 0);
+            shape.lineTo(hw / 2 + 0.15, rh);
+            shape.lineTo(-hw / 2 - 0.15, rh * 0.15);
+          } else {
+            shape.moveTo(-hw / 2 - 0.2, 0);
+            shape.lineTo(hw / 2 + 0.2, 0);
+            shape.lineTo(0, rh);
+          }
+          shape.closePath();
+          const geo = new THREE.ExtrudeGeometry(shape, { depth: hd + 0.3, bevelEnabled: false });
+          geo.translate(0, 0, -(hd + 0.3) / 2);
+          const roof = new THREE.Mesh(geo, roofMat);
+          roof.position.y = wallTop;
+          roof.castShadow = true;
+          roof.receiveShadow = true;
+          g3.add(roof);
+        }
+
+        // 4. 데크 + 난간 + 계단
+        const deckX = hw / 2 + 0.75;
+        g4.add(box(1.5, 0.16, hd, "#a9855c", [deckX, slabTop - 0.06, 0], { rough: 0.9 }));
+        const railX = deckX + 0.72;
+        for (let z = -hd / 2 + 0.1; z <= hd / 2; z += 0.55) g4.add(box(0.1, 0.5, 0.1, "#8a6b47", [railX, slabTop + 0.2, z], { rough: 0.9 }));
+        g4.add(box(0.1, 0.08, hd, "#8a6b47", [railX, slabTop + 0.44, 0], { rough: 0.9 }));
+        // 계단
+        g4.add(box(0.4, 0.16, 0.8, "#b9b3a6", [deckX + 0.55, slabTop - 0.18, hd / 2 + 0.2], { rough: 0.9 }));
+        g4.add(box(0.4, 0.16, 0.8, "#c3bdb0", [deckX + 0.9, slabTop - 0.34, hd / 2 + 0.2], { rough: 0.9 }));
+
+        // 조경수 · 관목 · 자동차
+        g4.add(tree(-2.4, 1.9, 1.1));
+        g4.add(tree(-2.5, -1.6, 1.0));
+        g4.add(tree(2.6, 2.0, 0.95));
+        [[-1.9, 2.4], [-1.4, 2.5]].forEach(([x, z]) => {
+          const s = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35, 0), mat("#5c8a48", { flat: true }));
+          s.position.set(x, 0.32, z);
+          s.castShadow = true;
+          s.receiveShadow = true;
+          g4.add(s);
+        });
+        // 자동차
+        const car = new THREE.Group();
+        car.add(box(1.7, 0.36, 0.8, "#c9524a", [0, 0.36, 0], { rough: 0.4, metal: 0.3 }));
+        car.add(box(0.95, 0.34, 0.72, "#d8615a", [-0.05, 0.64, 0], { rough: 0.35, metal: 0.3 }));
+        [[-0.55, 0.42], [-0.55, -0.42], [0.55, 0.42], [0.55, -0.42]].forEach(([x, z]) => {
+          const w = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.16, 16), mat("#22252a", { rough: 0.6 }));
+          w.rotation.x = Math.PI / 2;
+          w.position.set(x, 0.17, z);
+          w.castShadow = true;
+          car.add(w);
+        });
+        car.position.set(-2.3, 0, 2.0);
+        car.rotation.y = 0.5;
+        g4.add(car);
+      };
+      buildHouse(house);
+
+      // 스테이지 표시 상태
+      const applyStage = (n: number) => {
+        const set = (g: THREE_NS.Group, shown: boolean) => {
+          if (shown && !g.userData.shown) {
+            g.userData.shown = true;
+            g.visible = true;
+            g.userData.rt = 0.001;
+          } else if (!shown) {
+            g.userData.shown = false;
+            g.visible = false;
+            g.userData.rt = 0;
+            g.scale.y = 1;
+          }
+        };
+        set(g0, n === 0);
+        set(g1, n >= 1);
+        set(gExcav, n === 1);
+        set(g2, n >= 2);
+        set(g3, n >= 3);
+        set(g4, n >= 4);
+      };
+
+      // 리사이즈
+      const ro = new ResizeObserver(() => {
+        const w = mount.clientWidth,
+          h = mount.clientHeight;
+        if (!w || !h) return;
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+        renderer.setSize(w, h);
+      });
+      ro.observe(mount);
+
+      // 애니메이션 루프 (리빌 이징)
+      const clock = new THREE.Clock();
+      const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+      renderer.setAnimationLoop(() => {
+        const dt = clock.getDelta();
+        Object.values(groups).forEach((g) => {
+          if (g.userData.shown && g.userData.rt < 1) {
+            g.userData.rt = Math.min(1, g.userData.rt + dt * 2.4);
+            g.scale.y = Math.max(0.001, easeOut(g.userData.rt));
+          }
+        });
+        controls.update();
+        renderer.render(scene, camera);
+      });
+
+      apiRef.current = {
+        setStage: applyStage,
+        rebuildHouse: (h) => {
+          buildHouse(h);
+          // 현재 단계 반영 (재생성 후 표시상태 복구)
+          const wasShown = { g3: g3.userData.shown, g4: g4.userData.shown };
+          g3.visible = wasShown.g3;
+          g4.visible = wasShown.g4;
+          g3.scale.y = wasShown.g3 ? 1 : 0.001;
+          g4.scale.y = wasShown.g4 ? 1 : 0.001;
+        },
+        dispose: () => {
+          renderer.setAnimationLoop(null);
+          ro.disconnect();
+          controls.dispose();
+          scene.traverse((obj) => {
+            const m = obj as THREE_NS.Mesh;
+            m.geometry?.dispose?.();
+            const mm = m.material as THREE_NS.Material | THREE_NS.Material[] | undefined;
+            if (Array.isArray(mm)) mm.forEach((x) => x.dispose());
+            else mm?.dispose?.();
+          });
+          renderer.dispose();
+          if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement);
+        },
+      };
+      applyStage(3);
+      setReady(true);
+    })();
+
+    return () => {
+      disposed = true;
+      apiRef.current?.dispose();
+      apiRef.current = null;
+    };
+  }, []);
+
+  // 단계 변경 반영
+  useEffect(() => {
+    apiRef.current?.setStage(stage);
+  }, [stage]);
+
+  // 주택 변경 반영
+  useEffect(() => {
+    apiRef.current?.rebuildHouse(house);
+  }, [house]);
+
+  // 재생
   useEffect(() => {
     if (!playing) return;
     timer.current = setInterval(() => {
@@ -147,7 +410,7 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         }
         return s + 1;
       });
-    }, 1100);
+    }, 1200);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
@@ -158,46 +421,15 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
     setPlaying(true);
   };
 
-  // 주택 배치 파라미터
   const fpRatio = Math.min(0.5, house.areaPy / land.areaPy);
-  const hw = 2.4 + Math.min(1.3, house.areaPy / 26); // 폭(x)
-  const hd = 2.0 + Math.min(0.9, house.areaPy / 40); // 깊이(y)
-  const slabX = 1, slabY = 1, slabW = 4, slabH = 4;
-  const hx = slabX + (slabW - hw) / 2;
-  const hy = slabY + (slabH - hd) / 2;
-  const slabTop = 0.5;
-  const wallH = 1.5;
-  const wallTop = slabTop + wallH;
-
-  // 지반 타일
-  const groundTiles: React.ReactNode[] = [];
-  const greens = ["#7ba05b", "#86ab63", "#729655"];
-  for (let i = 0; i < 6; i++) {
-    for (let j = 0; j < 6; j++) {
-      const inPad = i >= 1 && i < 5 && j >= 1 && j < 5;
-      const graded = stage >= 1 && inPad;
-      const gv = (i * 3 + j * 5) % 3;
-      const color = graded ? "#b79a6f" : greens[gv];
-      const tp = [iso(i, j, 0), iso(i + 1, j, 0), iso(i + 1, j + 1, 0), iso(i, j + 1, 0)];
-      groundTiles.push(
-        <polygon key={`g${i}-${j}`} points={pts(tp)} fill={color} stroke="rgba(0,0,0,0.06)" strokeWidth="0.3" />
-      );
-    }
-  }
-
-  const Layer = ({ show, children }: { show: boolean; children: React.ReactNode }) => (
-    <g style={{ opacity: show ? 1 : 0, transition: "opacity 0.55s ease" }}>{show ? children : null}</g>
-  );
-
   const won = (n: number) => new Intl.NumberFormat("ko-KR").format(Math.round(n));
 
   return (
     <div className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-sm">
-      {/* 헤더 */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-black/5 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-brand" />
-          <span className="text-sm font-semibold">시공 시뮬레이션</span>
+          <span className="text-sm font-semibold">3D 시공 시뮬레이션</span>
           <span className="rounded-full bg-sand px-2 py-0.5 text-[11px] font-medium text-foreground/60">
             {STAGES[stage].label}
           </span>
@@ -210,90 +442,23 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         </button>
       </div>
 
-      {/* 아이소메트릭 장면 */}
-      <svg viewBox="0 76 400 210" className="block w-full bg-gradient-to-b from-[#dceaf3] to-[#eef5f0]" role="img" aria-label={`${land.title} 시공 ${STAGES[stage].label} 단계`}>
-        {/* 하늘 요소 */}
-        <circle cx="332" cy="112" r="15" fill="#ffe08a" opacity="0.85" />
-        <ellipse cx="92" cy="108" rx="24" ry="8" fill="#ffffff" opacity="0.6" />
-        <ellipse cx="120" cy="103" rx="16" ry="6" fill="#ffffff" opacity="0.5" />
-
-        {/* 흙 기반 + 지반 */}
-        {box("earth", 0, 0, -0.7, 6, 6, 0.7, "#6b4f34", { top: 1.0, left: 0.8, right: 0.62 })}
-        {groundTiles}
-
-        {/* 0. 나대지 자연물 (토목 시작 전) */}
-        <Layer show={stage === 0}>
-          {tree("t0", 2.2, 2.0)}
-          {tree("t1", 3.6, 3.2)}
-          {tree("t2", 1.6, 3.6)}
-          {pyramid("rock0", 3.2, 1.6, 0, 0.5, 0.5, 0.3, "#9a9488")}
-        </Layer>
-
-        {/* 1. 토목공사: 옹벽 + 흙더미 + 굴착기 */}
-        <Layer show={stage >= 1}>
-          {/* 옹벽 (앞쪽 y=5 모서리) */}
-          {box("wall", 1, 4.85, 0, 4, 0.25, 0.9, "#b8b2a6")}
-          {/* 흙더미 */}
-          {pyramid("d1", 0.2, 2.4, 0, 0.9, 0.9, 0.85, "#b5946a")}
-          {pyramid("d2", 5.0, 1.2, 0, 0.8, 0.8, 0.75, "#b5946a")}
-        </Layer>
-        {/* 굴착기는 토목 단계에서만 */}
-        <Layer show={stage === 1}>
-          {box("ex-track", 2.6, 2.4, 0, 1.5, 0.7, 0.25, "#3b3f45")}
-          {box("ex-body", 2.75, 2.5, 0.25, 1.0, 0.9, 0.55, "#f2c12e")}
-          {box("ex-cab", 2.8, 2.55, 0.8, 0.6, 0.7, 0.55, "#e8b420", { top: 1.1 })}
-          {panelX("ex-glass", 3.4, 2.6, 3.15, 0.9, 1.25, "#bfe3f0")}
-          {/* 붐/암 */}
-          {box("ex-boom", 3.7, 2.7, 0.45, 1.1, 0.16, 0.16, "#f2c12e")}
-          {box("ex-bucket", 4.7, 2.6, 0.1, 0.35, 0.4, 0.35, "#c9971f")}
-        </Layer>
-
-        {/* 2. 기초공사: 콘크리트 슬래브 + 기초 피어 */}
-        <Layer show={stage >= 2}>
-          {box("slab", slabX, slabY, 0, slabW, slabH, stage >= 3 ? slabTop : 0.35, "#cfcabf", { top: 1.08, left: 0.86, right: 0.68 })}
-          {stage === 2 && (
-            <>
-              {panelX("reb1", slabX + slabW, slabY + 0.5, slabY + 3.5, 0.02, 0.33, "#8c8577", 0.5)}
-              {[1.4, 2.4, 3.4].map((gx) => box(`pier${gx}`, gx, 2.4, 0.35, 0.25, 0.25, 0.2, "#b7b1a4"))}
-            </>
-          )}
-        </Layer>
-
-        {/* 3. 이동식 주택 */}
-        <Layer show={stage >= 3}>
-          {box("house", hx, hy, slabTop, hw, hd, wallH, house.color, { top: 1.1, left: 0.92, right: 0.74 })}
-          {/* 창문 (+y 면) */}
-          {panelY("w1", hy + hd, hx + 0.3, hx + 0.9, slabTop + 0.5, slabTop + 1.05, "#bfe3f0")}
-          {panelY("w2", hy + hd, hx + hw - 0.9, hx - 0.3 + hw, slabTop + 0.5, slabTop + 1.05, "#bfe3f0")}
-          {/* 문 (+x 면) */}
-          {panelX("door", hx + hw, hy + hd / 2 - 0.3, hy + hd / 2 + 0.3, slabTop, slabTop + 1.0, "#5a4632")}
-          {/* 창문 (+x 면) */}
-          {panelX("wx", hx + hw, hy + 0.25, hy + 0.75, slabTop + 0.5, slabTop + 1.0, "#bfe3f0")}
-          {roof("roof", hx, hy, hw, hd, wallTop, house.roof)}
-        </Layer>
-
-        {/* 4. 포치 · 데크 · 조경 */}
-        <Layer show={stage >= 4}>
-          {/* 데크 (+x 방향으로 확장) */}
-          {box("deck", hx + hw, hy, slabTop - 0.15, 1.2, hd, 0.15, "#a9855c", { top: 1.1, left: 0.88, right: 0.7 })}
-          {/* 데크 난간 기둥 */}
-          {[0, 0.6, 1.2].map((dy) => box(`rail${dy}`, hx + hw + 1.15, hy + dy, slabTop, 0.1, 0.1, 0.5, "#8a6b47"))}
-          {box("rail-top", hx + hw + 1.15, hy, slabTop + 0.45, 0.1, hd, 0.08, "#8a6b47")}
-          {/* 포치 계단 */}
-          {box("step1", hx + hw + 0.2, hy + hd / 2 - 0.35, slabTop - 0.35, 0.3, 0.7, 0.18, "#b9b3a6")}
-          {box("step2", hx + hw + 0.5, hy + hd / 2 - 0.35, slabTop - 0.2, 0.3, 0.7, 0.18, "#c3bdb0")}
-          {/* 조경수 — 주택 앞·측면에 배치(전면에 그려 겹침이 자연스럽게) */}
-          {tree("ft1", 0.4, 4.6)}
-          {tree("ft2", 4.9, 4.5)}
-          {tree("ft3", 3.4, 5.2)}
-          {/* 관목 */}
-          {pyramid("sh1", 0.9, 3.4, 0.5, 0.5, 0.5, 0.4, "#5c8a48")}
-          {pyramid("sh2", 0.9, 4.0, 0.5, 0.5, 0.5, 0.4, "#5c8a48")}
-          {/* 자동차 */}
-          {box("car-body", 0.4, 4.9, 0, 1.4, 0.7, 0.32, "#c9524a", { top: 1.12 })}
-          {box("car-cab", 0.7, 4.95, 0.32, 0.7, 0.6, 0.3, "#d8615a", { top: 1.14 })}
-        </Layer>
-      </svg>
+      {/* 3D 캔버스 */}
+      <div className="relative">
+        <div
+          ref={mountRef}
+          className="h-[300px] w-full sm:h-[380px]"
+          style={{ background: "linear-gradient(#dceaf3,#eef5f0)", cursor: "grab" }}
+          aria-label={`${land.title} 3D 시공 시뮬레이션`}
+        />
+        {!ready && (
+          <div className="absolute inset-0 grid place-items-center text-sm text-foreground/40">
+            3D 장면 불러오는 중…
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-2 right-3 text-[11px] text-foreground/45">
+          드래그하여 회전 · 스크롤 확대
+        </div>
+      </div>
 
       {/* 타임라인 */}
       <div className="border-t border-black/5 px-4 py-3">
@@ -314,27 +479,18 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
               >
                 {i + 1}
               </span>
-              <span
-                className={`text-[10px] font-medium transition sm:text-[11px] ${
-                  i === stage ? "text-brand" : "text-foreground/45"
-                }`}
-              >
+              <span className={`text-[10px] font-medium transition sm:text-[11px] ${i === stage ? "text-brand" : "text-foreground/45"}`}>
                 {s.label}
               </span>
             </button>
           ))}
         </div>
-        {/* 진행 바 */}
         <div className="mt-2 h-1 overflow-hidden rounded-full bg-sand">
-          <div
-            className="h-full rounded-full bg-brand transition-all duration-500"
-            style={{ width: `${(stage / (STAGES.length - 1)) * 100}%` }}
-          />
+          <div className="h-full rounded-full bg-brand transition-all duration-500" style={{ width: `${(stage / (STAGES.length - 1)) * 100}%` }} />
         </div>
         <p className="mt-2 text-center text-xs text-foreground/50">{STAGES[stage].desc}</p>
       </div>
 
-      {/* 지표 */}
       <div className="grid grid-cols-3 divide-x divide-black/5 border-t border-black/5 text-center">
         <Stat label="일조 점수" value={`${land.sunlight}/100`} />
         <Stat label="건폐 사용" value={`${Math.round(fpRatio * 100)}%`} />
