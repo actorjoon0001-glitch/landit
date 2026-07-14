@@ -45,7 +45,8 @@ function buildStyle(): maplibregl.StyleSpecification {
   const layers: maplibregl.LayerSpecification[] = [];
 
   if (HAS_VW) {
-    sources.base = { type: "raster", tiles: [vw("Base", "png")], tileSize: 256, attribution: "© 국토교통부 V-World" };
+    // gray(회색 미니멀) 모드 — 정부 기본 컬러맵보다 세련된 프리미엄 룩
+    sources.base = { type: "raster", tiles: [vw("gray", "png")], tileSize: 256, attribution: "© 국토교통부 V-World" };
     sources.sat = { type: "raster", tiles: [vw("Satellite", "jpeg")], tileSize: 256, attribution: "© 국토교통부 V-World" };
     sources.hybrid = { type: "raster", tiles: [vw("Hybrid", "png")], tileSize: 256 };
     sources.cadastral = {
@@ -227,28 +228,35 @@ export default function LandMap() {
           )}
           {/* 레이어 전환 (V-World 사용 시) */}
           {HAS_VW && (
-            <div className="absolute right-3 top-3 flex flex-col gap-1.5">
-              <div className="flex overflow-hidden rounded-lg border border-black/10 bg-white text-xs font-medium shadow-sm">
+            <div className="absolute right-3 top-3 flex flex-col items-end gap-2">
+              <div className="flex rounded-full border border-white/60 bg-white/70 p-0.5 text-xs font-semibold shadow-lg ring-1 ring-black/5 backdrop-blur-md">
                 <button
                   onClick={() => setMode("map")}
-                  className={`px-3 py-1.5 transition ${mode === "map" ? "bg-brand text-white" : "hover:bg-sand"}`}
+                  className={`rounded-full px-3.5 py-1.5 transition ${
+                    mode === "map" ? "bg-brand text-white shadow" : "text-foreground/70 hover:text-foreground"
+                  }`}
                 >
                   지도
                 </button>
                 <button
                   onClick={() => setMode("sat")}
-                  className={`px-3 py-1.5 transition ${mode === "sat" ? "bg-brand text-white" : "hover:bg-sand"}`}
+                  className={`rounded-full px-3.5 py-1.5 transition ${
+                    mode === "sat" ? "bg-brand text-white shadow" : "text-foreground/70 hover:text-foreground"
+                  }`}
                 >
                   위성
                 </button>
               </div>
               <button
                 onClick={() => setCadastral((v) => !v)}
-                className={`rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium shadow-sm transition ${
-                  cadastral ? "bg-brand text-white" : "bg-white hover:bg-sand"
+                className={`flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-semibold shadow-lg backdrop-blur-md transition ${
+                  cadastral
+                    ? "border-brand bg-brand text-white"
+                    : "border-white/60 bg-white/70 text-foreground/70 ring-1 ring-black/5 hover:text-foreground"
                 }`}
               >
-                지적도 {cadastral ? "켜짐" : "꺼짐"}
+                <span className={`h-1.5 w-1.5 rounded-full ${cadastral ? "bg-white" : "bg-foreground/30"}`} />
+                지적도
               </button>
             </div>
           )}
