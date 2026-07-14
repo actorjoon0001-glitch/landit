@@ -2,21 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import type * as LeafletNS from "leaflet";
-import "leaflet/dist/leaflet.css";
+import type maplibregl from "maplibre-gl";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { LANDS, landTotal, eok, type Land } from "@/lib/data";
 
-const KOREA_CENTER: [number, number] = [36.2, 127.9];
+// V-World(국토교통부) 무료 인증키 — Netlify 환경변수 NEXT_PUBLIC_VWORLD_KEY 로 주입.
+// 키가 없으면 OpenStreetMap 으로 폴백합니다.
+const VWORLD_KEY = process.env.NEXT_PUBLIC_VWORLD_KEY || "";
+const HAS_VW = VWORLD_KEY.length > 0;
 
-function pinIcon(L: typeof LeafletNS, active: boolean) {
-  return L.divIcon({
-    className: "",
-    html: `<div class="lm-pin${active ? " lm-pin--active" : ""}"><span></span></div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-    popupAnchor: [0, -14],
-  });
-}
+const KOREA_BOUNDS: [[number, number], [number, number]] = [
+  [125.6, 33.0],
+  [129.9, 38.7],
+]; // [[west,south],[east,north]]
 
 function popupHtml(l: Land) {
   return `
@@ -29,62 +27,109 @@ function popupHtml(l: Land) {
     </div>`;
 }
 
+function makePin(active: boolean) {
+  const el = document.createElement("div");
+  el.className = "lm-pin" + (active ? " lm-pin--active" : "");
+  el.appendChild(document.createElement("span"));
+  return el;
+}
+
+function buildStyle(): maplibregl.StyleSpecification {
+  const vw = (layer: string, ext: string) =>
+    `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/${layer}/{z}/{y}/{x}.${ext}`;
+  const domain = typeof window !== "undefined" ? window.location.origin : "";
+
+  const sources: maplibregl.StyleSpecification["sources"] = {};
+  const layers: maplibregl.LayerSpecification[] = [];
+
+  if (HAS_VW) {
+    sources.base = { type: "raster", tiles: [vw("Base", "png")], tileSize: 256, attribution: "© 국토교통부 V-World" };
+    sources.sat = { type: "raster", tiles: [vw("Satellite", "jpeg")], tileSize: 256, attribution: "© 국토교통부 V-World" };
+    sources.hybrid = { type: "raster", tiles: [vw("Hybrid", "png")], tileSize: 256 };
+    sources.cadastral = {
+      type: "raster",
+      tiles: [
+        `https://api.vworld.kr/req/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=lp_pa_cbnd_bubun&STYLES=lp_pa_cbnd_bubun&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE&KEY=${VWORLD_KEY}&DOMAIN=${domain}`,
+      ],
+      tileSize: 256,
+    };
+    layers.push({ id: "base-l", type: "raster", source: "base", layout: { visibility: "visible" } });
+    layers.push({ id: "sat-l", type: "raster", source: "sat", layout: { visibility: "none" } });
+    layers.push({ id: "hybrid-l", type: "raster", source: "hybrid", layout: { visibility: "none" } });
+    layers.push({ id: "cad-l", type: "raster", source: "cadastral", layout: { visibility: "none" } });
+  } else {
+    sources.base = {
+      type: "raster",
+      tiles: [
+        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
+      ],
+      tileSize: 256,
+      attribution: "© OpenStreetMap 기여자",
+    };
+    layers.push({ id: "base-l", type: "raster", source: "base", layout: { visibility: "visible" } });
+  }
+
+  return { version: 8, sources, layers };
+}
+
 export default function LandMap() {
   const [active, setActive] = useState<Land | null>(null);
   const [region, setRegion] = useState<string>("전체");
+  const [mode, setMode] = useState<"map" | "sat">("map");
+  const [cadastral, setCadastral] = useState(false);
+  const [ready, setReady] = useState(false);
 
   const mapEl = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<LeafletNS.Map | null>(null);
-  const markersRef = useRef<Record<string, LeafletNS.Marker>>({});
-  const LRef = useRef<typeof LeafletNS | null>(null);
+  const mapRef = useRef<maplibregl.Map | null>(null);
+  const glRef = useRef<typeof maplibregl | null>(null);
+  const markersRef = useRef<Record<string, maplibregl.Marker>>({});
+  const elsRef = useRef<Record<string, HTMLElement>>({});
+  const popupRef = useRef<maplibregl.Popup | null>(null);
 
-  // 시/도(광역) 단위로 지역 선택 — 예: "경기 가평" → "경기"
   const province = (l: Land) => l.region.split(" ")[0];
   const regions = ["전체", ...Array.from(new Set(LANDS.map(province)))];
-  const shown =
-    region === "전체" ? LANDS : LANDS.filter((l) => province(l) === region);
+  const shown = region === "전체" ? LANDS : LANDS.filter((l) => province(l) === region);
   const shownIds = shown.map((l) => l.id).join(",");
 
-  // 지도 초기화 (1회) — 모든 매물 마커 생성
+  // 지도 초기화
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const L = (await import("leaflet")).default;
+      const gl = (await import("maplibre-gl")).default;
       if (cancelled || mapRef.current || !mapEl.current) return;
-      LRef.current = L;
+      glRef.current = gl;
 
-      const map = L.map(mapEl.current, {
-        center: KOREA_CENTER,
-        zoom: 7,
-        scrollWheelZoom: false,
-        attributionControl: true,
+      const map = new gl.Map({
+        container: mapEl.current,
+        style: buildStyle(),
+        bounds: KOREA_BOUNDS,
+        fitBoundsOptions: { padding: 24 },
+        maxBounds: [
+          [123.5, 31.8],
+          [132.2, 39.8],
+        ],
+        minZoom: 5.5,
+        maxZoom: 18,
+        attributionControl: { compact: true },
       });
       mapRef.current = map;
+      map.addControl(new gl.NavigationControl({ showCompass: false }), "top-left");
+      map.dragRotate.disable();
+      map.touchZoomRotate.disableRotation();
 
-      // OSM 표준 타일 — 한국 지명이 한글로 표기됨
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        subdomains: "abc",
-        maxZoom: 19,
-        attribution:
-          '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> 기여자',
-      }).addTo(map);
-
+      // 마커는 타일 로드와 무관하게 즉시 추가 (지도 생성 직후 배치 가능)
       LANDS.forEach((l) => {
-        const marker = L.marker([l.lat, l.lng], {
-          icon: pinIcon(L, false),
-          title: l.title,
-        });
-        marker.bindPopup(popupHtml(l), { closeButton: true, minWidth: 200 });
-        marker.on("mouseover", () => setActive(l));
-        marker.on("click", () => setActive(l));
-        marker.addTo(map); // 기본 지역("전체")에서는 모두 표시
+        const el = makePin(false);
+        el.addEventListener("mouseenter", () => setActive(l));
+        el.addEventListener("click", () => setActive(l));
+        const marker = new gl.Marker({ element: el }).setLngLat([l.lng, l.lat]).addTo(map);
         markersRef.current[l.id] = marker;
+        elsRef.current[l.id] = el;
       });
-
-      map.fitBounds(
-        L.latLngBounds(LANDS.map((l) => [l.lat, l.lng] as [number, number])),
-        { padding: [40, 40] }
-      );
+      popupRef.current = new gl.Popup({ offset: 18, closeButton: true, maxWidth: "240px" });
+      if (!cancelled) setReady(true);
     })();
 
     return () => {
@@ -93,73 +138,121 @@ export default function LandMap() {
         mapRef.current.remove();
         mapRef.current = null;
         markersRef.current = {};
+        elsRef.current = {};
       }
     };
   }, []);
 
-  // 지역 필터 → 보이는 마커만 표시 + 화면 맞춤
+  // 지역 필터
   useEffect(() => {
-    const L = LRef.current;
+    const gl = glRef.current;
     const map = mapRef.current;
-    if (!L || !map) return;
+    if (!gl || !map || !ready) return;
     const visible = shownIds ? shownIds.split(",") : [];
     LANDS.forEach((l) => {
       const marker = markersRef.current[l.id];
       if (!marker) return;
       if (visible.includes(l.id)) marker.addTo(map);
-      else map.removeLayer(marker);
+      else marker.remove();
     });
-    const pts = LANDS.filter((l) => visible.includes(l.id)).map(
-      (l) => [l.lat, l.lng] as [number, number]
-    );
-    if (pts.length === 1) map.setView(pts[0], 11, { animate: true });
-    else if (pts.length > 1)
-      map.fitBounds(L.latLngBounds(pts), { padding: [40, 40], animate: true });
-  }, [shownIds]);
-
-  // 활성 매물 → 마커 강조 + 팝업 + 이동
-  useEffect(() => {
-    const L = LRef.current;
-    const map = mapRef.current;
-    if (!L || !map) return;
-    Object.entries(markersRef.current).forEach(([id, marker]) => {
-      marker.setIcon(pinIcon(L, id === active?.id));
-    });
-    if (active) {
-      const marker = markersRef.current[active.id];
-      if (marker && map.hasLayer(marker)) {
-        map.panTo([active.lat, active.lng], { animate: true });
-        marker.openPopup();
-      }
+    const pts = LANDS.filter((l) => visible.includes(l.id));
+    if (region === "전체") {
+      map.fitBounds(KOREA_BOUNDS, { padding: 24, duration: 700 });
+    } else if (pts.length === 1) {
+      map.flyTo({ center: [pts[0].lng, pts[0].lat], zoom: 11, duration: 800 });
+    } else if (pts.length > 1) {
+      const b = new gl.LngLatBounds();
+      pts.forEach((l) => b.extend([l.lng, l.lat]));
+      map.fitBounds(b, { padding: 60, maxZoom: 11, duration: 800 });
     }
-  }, [active]);
+  }, [shownIds, region, ready]);
+
+  // 활성 매물 강조 + 팝업
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    Object.entries(elsRef.current).forEach(([id, el]) => {
+      el.classList.toggle("lm-pin--active", id === active?.id);
+    });
+    if (active && popupRef.current) {
+      popupRef.current.setLngLat([active.lng, active.lat]).setHTML(popupHtml(active)).addTo(map);
+      map.panTo([active.lng, active.lat], { duration: 500 });
+    } else {
+      popupRef.current?.remove();
+    }
+  }, [active, ready]);
+
+  // 베이스맵 / 지적도 토글
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready || !HAS_VW) return;
+    const set = (id: string, v: boolean) => {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", v ? "visible" : "none");
+    };
+    set("base-l", mode === "map");
+    set("sat-l", mode === "sat");
+    set("hybrid-l", mode === "sat");
+    set("cad-l", cadastral);
+  }, [mode, cadastral, ready]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-      {/* 지도 */}
       <div>
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
           {regions.map((r) => (
             <button
               key={r}
               onClick={() => setRegion(r)}
               className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                region === r
-                  ? "bg-brand text-white"
-                  : "bg-sand text-foreground/60 hover:bg-black/5"
+                region === r ? "bg-brand text-white" : "bg-sand text-foreground/60 hover:bg-black/5"
               }`}
             >
               {r}
             </button>
           ))}
         </div>
-        <div
-          ref={mapEl}
-          className="h-[460px] w-full overflow-hidden rounded-2xl border border-black/5 shadow-sm sm:h-[560px]"
-          aria-label="매물 토지 지도"
-        />
+
+        <div className="relative">
+          <div
+            ref={mapEl}
+            className="h-[460px] w-full overflow-hidden rounded-2xl border border-black/5 shadow-sm sm:h-[560px]"
+            aria-label="매물 토지 지도"
+          />
+          {!ready && (
+            <div className="pointer-events-none absolute inset-0 grid place-items-center rounded-2xl bg-sand/40 text-sm text-foreground/40">
+              지도 불러오는 중…
+            </div>
+          )}
+          {/* 레이어 전환 (V-World 사용 시) */}
+          {HAS_VW && (
+            <div className="absolute right-3 top-3 flex flex-col gap-1.5">
+              <div className="flex overflow-hidden rounded-lg border border-black/10 bg-white text-xs font-medium shadow-sm">
+                <button
+                  onClick={() => setMode("map")}
+                  className={`px-3 py-1.5 transition ${mode === "map" ? "bg-brand text-white" : "hover:bg-sand"}`}
+                >
+                  지도
+                </button>
+                <button
+                  onClick={() => setMode("sat")}
+                  className={`px-3 py-1.5 transition ${mode === "sat" ? "bg-brand text-white" : "hover:bg-sand"}`}
+                >
+                  위성
+                </button>
+              </div>
+              <button
+                onClick={() => setCadastral((v) => !v)}
+                className={`rounded-lg border border-black/10 px-3 py-1.5 text-xs font-medium shadow-sm transition ${
+                  cadastral ? "bg-brand text-white" : "bg-white hover:bg-sand"
+                }`}
+              >
+                지적도 {cadastral ? "켜짐" : "꺼짐"}
+              </button>
+            </div>
+          )}
+        </div>
         <p className="mt-2 text-center text-xs text-foreground/40">
-          핀을 누르면 매물 정보가 열립니다 · 지도 데이터 © OpenStreetMap
+          핀을 누르면 매물 정보가 열립니다 · {HAS_VW ? "지도 © 국토교통부 V-World" : "지도 © OpenStreetMap"}
         </p>
       </div>
 
@@ -171,9 +264,7 @@ export default function LandMap() {
             href={`/land/${l.id}`}
             onMouseEnter={() => setActive(l)}
             className={`block rounded-xl border p-4 transition ${
-              active?.id === l.id
-                ? "border-brand bg-brand/5"
-                : "border-black/5 bg-white hover:border-black/15"
+              active?.id === l.id ? "border-brand bg-brand/5" : "border-black/5 bg-white hover:border-black/15"
             }`}
           >
             <div className="flex items-start justify-between gap-3">
@@ -190,10 +281,7 @@ export default function LandMap() {
             </div>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {l.tags.map((t) => (
-                <span
-                  key={t}
-                  className="rounded-full bg-sand px-2 py-0.5 text-[11px] text-foreground/60"
-                >
+                <span key={t} className="rounded-full bg-sand px-2 py-0.5 text-[11px] text-foreground/60">
                   #{t}
                 </span>
               ))}

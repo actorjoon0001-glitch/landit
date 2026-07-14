@@ -84,13 +84,16 @@ body {
     0 3px 8px rgba(0, 0, 0, 0.35);
 }
 
-/* Leaflet 팝업 스타일 */
-.leaflet-popup-content-wrap {
+/* 지도 팝업 스타일 (MapLibre) */
+.maplibregl-popup-content {
   border-radius: 12px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  padding: 12px 14px;
 }
-.leaflet-popup-content {
-  margin: 12px 14px;
+.maplibregl-popup-close-button {
+  font-size: 16px;
+  padding: 2px 6px;
+  color: rgba(26, 28, 26, 0.4);
 }
 .lm-popup-region {
   font-size: 11px;
