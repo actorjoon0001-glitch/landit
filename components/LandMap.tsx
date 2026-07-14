@@ -6,9 +6,11 @@ import type maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { LANDS, landTotal, eok, type Land } from "@/lib/data";
 
-// V-World(국토교통부) 무료 인증키 — Netlify 환경변수 NEXT_PUBLIC_VWORLD_KEY 로 주입.
-// 키가 없으면 OpenStreetMap 으로 폴백합니다.
-const VWORLD_KEY = process.env.NEXT_PUBLIC_VWORLD_KEY || "";
+// V-World(국토교통부) 무료 인증키.
+// 도메인 제한 공개키(등록 도메인에서만 동작)라 코드에 두어도 안전.
+// Netlify 환경변수 NEXT_PUBLIC_VWORLD_KEY 로 덮어쓸 수 있으며, 없으면 OSM 폴백.
+const VWORLD_KEY =
+  process.env.NEXT_PUBLIC_VWORLD_KEY || "9E135238-3706-3733-B749-1EF38ADC45FD";
 const HAS_VW = VWORLD_KEY.length > 0;
 
 const KOREA_BOUNDS: [[number, number], [number, number]] = [
