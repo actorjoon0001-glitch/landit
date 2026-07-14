@@ -45,8 +45,8 @@ function buildStyle(): maplibregl.StyleSpecification {
   const layers: maplibregl.LayerSpecification[] = [];
 
   if (HAS_VW) {
-    // gray(회색 미니멀) 모드 — 정부 기본 컬러맵보다 세련된 프리미엄 룩
-    sources.base = { type: "raster", tiles: [vw("gray", "png")], tileSize: 256, attribution: "© 국토교통부 V-World" };
+    // 검증된 Base 타일 사용 (세련된 무채색 느낌은 CSS 필터로 처리 — lm-muted)
+    sources.base = { type: "raster", tiles: [vw("Base", "png")], tileSize: 256, attribution: "© 국토교통부 V-World" };
     sources.sat = { type: "raster", tiles: [vw("Satellite", "jpeg")], tileSize: 256, attribution: "© 국토교통부 V-World" };
     sources.hybrid = { type: "raster", tiles: [vw("Hybrid", "png")], tileSize: 256 };
     sources.cadastral = {
@@ -218,7 +218,9 @@ export default function LandMap() {
         <div className="relative">
           <div
             ref={mapEl}
-            className="h-[460px] w-full overflow-hidden rounded-2xl border border-black/5 shadow-sm sm:h-[560px]"
+            className={`h-[460px] w-full overflow-hidden rounded-2xl border border-black/5 shadow-sm sm:h-[560px] ${
+              mode === "map" ? "lm-muted" : ""
+            }`}
             aria-label="매물 토지 지도"
           />
           {!ready && (
