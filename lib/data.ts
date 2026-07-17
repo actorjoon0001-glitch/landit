@@ -45,6 +45,22 @@ export interface Land {
 
 export const MODULAR_HOUSES: ModularHouse[] = [
   {
+    // 세움 실제 판매 19평 모델 (크림 사이딩 + 박공지붕 + 포치데크)
+    // 실사 렌더: public/img/seum-19-*.webp 추가 후 renders에 등록
+    // 3D 모델: public/models/seum-19.glb 추가 후 model에 등록
+    id: "m-seum-19",
+    name: "세움 19",
+    builder: "세움",
+    areaPy: 19,
+    bedrooms: 2,
+    bathrooms: 1,
+    priceKRW: 125_000_000, // 예상가 — 실제 판매가 확인 후 교체
+    buildWeeks: 6,
+    style: "클래식 사이딩 포치",
+    color: "#efe9dc",
+    roof: "gable",
+  },
+  {
     id: "m-nordic-24",
     name: "노르딕 24",
     builder: "모듈하우스코리아",
