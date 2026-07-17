@@ -56,6 +56,7 @@ export const MODULAR_HOUSES: ModularHouse[] = [
     style: "북유럽 미니멀",
     color: "#e8e4dc",
     roof: "gable",
+    model: "/models/nordic-24.glb",
   },
   {
     id: "m-cabin-18",
