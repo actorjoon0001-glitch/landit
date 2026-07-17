@@ -81,6 +81,19 @@ export default function LandDetail({
         <div>
           <Simulation land={land} house={selected} />
 
+          <Link
+            href={`/land/${land.id}/build`}
+            className="mt-3 flex items-center justify-between rounded-2xl bg-gradient-to-r from-brand to-brand-dark px-5 py-4 text-white shadow-sm transition hover:shadow-md"
+          >
+            <span className="text-sm font-bold">
+              🎮 직접 짓기 모드 <span className="rounded-full bg-white/20 px-1.5 py-0.5 text-[10px]">BETA</span>
+              <span className="mt-0.5 block text-xs font-normal text-white/75">
+                이 땅에 내 손으로 토목·기초·주택을 배치해 보세요
+              </span>
+            </span>
+            <span className="text-lg">→</span>
+          </Link>
+
           <div className="mt-4 rounded-2xl border border-black/5 bg-white p-4">
             <p className="text-sm font-semibold">이 땅에 앉힐 모듈러주택 선택</p>
             <p className="mt-0.5 text-xs text-foreground/50">
