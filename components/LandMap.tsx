@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import { LANDS, landTotal, eok, type Land } from "@/lib/data";
+import { LANDS, landTotal, eok, landImage, type Land } from "@/lib/data";
 
 // V-World(국토교통부) 무료 인증키.
 // 도메인 제한 공개키(등록 도메인에서만 동작)라 코드에 두어도 안전.
@@ -275,28 +275,32 @@ export default function LandMap() {
             key={l.id}
             href={`/land/${l.id}`}
             onMouseEnter={() => setActive(l)}
-            className={`block rounded-xl border p-4 transition ${
-              active?.id === l.id ? "border-brand bg-brand/5" : "border-black/5 bg-white hover:border-black/15"
+            className={`flex gap-3 overflow-hidden rounded-xl border p-3 transition ${
+              active?.id === l.id ? "border-brand bg-brand/5 shadow-sm" : "border-black/5 bg-white hover:border-black/15"
             }`}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-medium text-brand">{l.region}</p>
-                <p className="font-bold leading-tight">{l.title}</p>
+            <div
+              className="h-[76px] w-[100px] shrink-0 rounded-lg bg-cover bg-center"
+              style={{ backgroundImage: `url(${landImage(l)})` }}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-brand">{l.region}</p>
+                  <p className="truncate font-bold leading-tight">{l.title}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-extrabold">{eok(landTotal(l))}</p>
+                  <p className="text-[11px] text-foreground/40">{l.areaPy}평</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm font-extrabold">{eok(landTotal(l))}</p>
-                <p className="text-[11px] text-foreground/40">
-                  {l.areaPy}평 · 평당 {l.pricePerPy}만
-                </p>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {l.tags.slice(0, 3).map((t) => (
+                  <span key={t} className="rounded-full bg-sand px-2 py-0.5 text-[10px] text-foreground/55">
+                    #{t}
+                  </span>
+                ))}
               </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {l.tags.map((t) => (
-                <span key={t} className="rounded-full bg-sand px-2 py-0.5 text-[11px] text-foreground/60">
-                  #{t}
-                </span>
-              ))}
             </div>
           </Link>
         ))}

@@ -257,3 +257,11 @@ export const eok = (n: number) => {
 
 // 대지 총액(평당가는 만원 단위)
 export const landTotal = (land: Land) => land.areaPy * land.pricePerPy * 10_000;
+
+// 매물 조망에 맞는 포토리얼 이미지 (Higgsfield 생성)
+export function landImage(l: Land): string {
+  if (l.view.includes("바다")) return "/img/view-ocean.webp";
+  if (l.view.includes("충주호") || l.view.includes("호수")) return "/img/view-lake.webp";
+  if (l.view.includes("숲") || l.view.includes("계곡")) return "/img/view-forest.webp";
+  return "/img/view-river.webp";
+}
