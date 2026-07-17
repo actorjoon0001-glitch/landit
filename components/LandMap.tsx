@@ -21,20 +21,38 @@ const KOREA_BOUNDS: [[number, number], [number, number]] = [
 function popupHtml(l: Land) {
   return `
     <div class="lm-popup">
-      <div class="lm-popup-region">${l.region}</div>
-      <div class="lm-popup-title">${l.title}</div>
-      <div class="lm-popup-meta">${l.areaPy}평 · ${l.view}</div>
-      <div class="lm-popup-price">${eok(landTotal(l))}</div>
-      <a class="lm-popup-link" href="/land/${l.id}">시뮬레이션 보기 →</a>
+      <div class="lm-popup-img" style="background-image:url(${landImage(l)})"></div>
+      <div class="lm-popup-body">
+        <div class="lm-popup-region">${l.region} · ${l.view}</div>
+        <div class="lm-popup-title">${l.title}</div>
+        <div class="lm-popup-meta">${l.areaPy}평 · 평당 ${l.pricePerPy}만원</div>
+        <div class="lm-popup-price">${eok(landTotal(l))}</div>
+        <a class="lm-popup-link" href="/land/${l.id}">3D 시뮬레이션 보기 →</a>
+      </div>
     </div>`;
 }
 
-function makePin(active: boolean) {
+// 가격 배지 마커 (직방/Zillow 스타일)
+function makePin(l: Land) {
   const el = document.createElement("div");
-  el.className = "lm-pin" + (active ? " lm-pin--active" : "");
-  el.appendChild(document.createElement("span"));
+  el.className = "lm-price-pin";
+  el.textContent = eok(landTotal(l)).replace("원", "");
   return el;
 }
+
+// 필터 정의
+const PRICE_FILTERS: { key: string; test: (total: number) => boolean }[] = [
+  { key: "전체", test: () => true },
+  { key: "3억 이하", test: (t) => t <= 300_000_000 },
+  { key: "3~5억", test: (t) => t > 300_000_000 && t <= 500_000_000 },
+  { key: "5억 이상", test: (t) => t > 500_000_000 },
+];
+const AREA_FILTERS: { key: string; test: (py: number) => boolean }[] = [
+  { key: "전체", test: () => true },
+  { key: "~150평", test: (a) => a <= 150 },
+  { key: "150~250평", test: (a) => a > 150 && a <= 250 },
+  { key: "250평~", test: (a) => a > 250 },
+];
 
 function buildStyle(): maplibregl.StyleSpecification {
   const vw = (layer: string, ext: string) =>
@@ -80,6 +98,8 @@ function buildStyle(): maplibregl.StyleSpecification {
 export default function LandMap() {
   const [active, setActive] = useState<Land | null>(null);
   const [region, setRegion] = useState<string>("전체");
+  const [priceF, setPriceF] = useState<string>("전체");
+  const [areaF, setAreaF] = useState<string>("전체");
   const [mode, setMode] = useState<"map" | "sat">("map");
   const [cadastral, setCadastral] = useState(false);
   const [ready, setReady] = useState(false);
@@ -93,7 +113,14 @@ export default function LandMap() {
 
   const province = (l: Land) => l.region.split(" ")[0];
   const regions = ["전체", ...Array.from(new Set(LANDS.map(province)))];
-  const shown = region === "전체" ? LANDS : LANDS.filter((l) => province(l) === region);
+  const priceTest = PRICE_FILTERS.find((f) => f.key === priceF)!.test;
+  const areaTest = AREA_FILTERS.find((f) => f.key === areaF)!.test;
+  const matchBase = (l: Land) => priceTest(landTotal(l)) && areaTest(l.areaPy);
+  const shown = LANDS.filter(
+    (l) => (region === "전체" || province(l) === region) && matchBase(l)
+  );
+  const countFor = (r: string) =>
+    LANDS.filter((l) => (r === "전체" || province(l) === r) && matchBase(l)).length;
   const shownIds = shown.map((l) => l.id).join(",");
 
   // 지도 초기화
@@ -124,14 +151,14 @@ export default function LandMap() {
 
       // 마커는 타일 로드와 무관하게 즉시 추가 (지도 생성 직후 배치 가능)
       LANDS.forEach((l) => {
-        const el = makePin(false);
+        const el = makePin(l);
         el.addEventListener("mouseenter", () => setActive(l));
         el.addEventListener("click", () => setActive(l));
         const marker = new gl.Marker({ element: el }).setLngLat([l.lng, l.lat]).addTo(map);
         markersRef.current[l.id] = marker;
         elsRef.current[l.id] = el;
       });
-      popupRef.current = new gl.Popup({ offset: 18, closeButton: true, maxWidth: "240px" });
+      popupRef.current = new gl.Popup({ offset: 20, closeButton: true, maxWidth: "270px" });
       if (!cancelled) setReady(true);
     })();
 
@@ -158,6 +185,8 @@ export default function LandMap() {
       if (visible.includes(l.id)) marker.addTo(map);
       else marker.remove();
     });
+    // 필터로 제외된 매물이 활성 상태면 팝업 닫기
+    setActive((a) => (a && !visible.includes(a.id) ? null : a));
     const pts = LANDS.filter((l) => visible.includes(l.id));
     if (region === "전체") {
       map.fitBounds(KOREA_BOUNDS, { padding: 24, duration: 700 });
@@ -175,7 +204,7 @@ export default function LandMap() {
     const map = mapRef.current;
     if (!map || !ready) return;
     Object.entries(elsRef.current).forEach(([id, el]) => {
-      el.classList.toggle("lm-pin--active", id === active?.id);
+      el.classList.toggle("lm-price-pin--active", id === active?.id);
     });
     if (active && popupRef.current) {
       popupRef.current.setLngLat([active.lng, active.lat]).setHTML(popupHtml(active)).addTo(map);
@@ -201,18 +230,60 @@ export default function LandMap() {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
       <div>
-        <div className="mb-3 flex flex-wrap items-center gap-2">
-          {regions.map((r) => (
-            <button
-              key={r}
-              onClick={() => setRegion(r)}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
-                region === r ? "bg-brand text-white" : "bg-sand text-foreground/60 hover:bg-black/5"
-              }`}
-            >
-              {r}
-            </button>
-          ))}
+        <div className="mb-3 space-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {regions.map((r) => (
+              <button
+                key={r}
+                onClick={() => setRegion(r)}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition ${
+                  region === r ? "bg-brand text-white" : "bg-sand text-foreground/60 hover:bg-black/5"
+                }`}
+              >
+                {r}
+                <span className={`ml-1 ${region === r ? "text-white/70" : "text-foreground/35"}`}>
+                  {countFor(r)}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-foreground/40">가격</span>
+              {PRICE_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setPriceF(f.key)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                    priceF === f.key
+                      ? "bg-brand/10 text-brand ring-1 ring-brand/40"
+                      : "bg-sand text-foreground/55 hover:bg-black/5"
+                  }`}
+                >
+                  {f.key}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-semibold text-foreground/40">평수</span>
+              {AREA_FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setAreaF(f.key)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition ${
+                    areaF === f.key
+                      ? "bg-brand/10 text-brand ring-1 ring-brand/40"
+                      : "bg-sand text-foreground/55 hover:bg-black/5"
+                  }`}
+                >
+                  {f.key}
+                </button>
+              ))}
+            </div>
+            <span className="ml-auto text-xs font-semibold text-foreground/50">
+              매물 <span className="text-brand">{shown.length}</span>건
+            </span>
+          </div>
         </div>
 
         <div className="relative">
@@ -269,7 +340,23 @@ export default function LandMap() {
       </div>
 
       {/* 목록 */}
-      <div className="space-y-3 lg:max-h-[620px] lg:overflow-y-auto lg:pr-1">
+      <div className="space-y-3 lg:max-h-[680px] lg:overflow-y-auto lg:pr-1">
+        {shown.length === 0 && (
+          <div className="rounded-xl border border-dashed border-black/10 bg-sand/50 p-8 text-center text-sm text-foreground/50">
+            조건에 맞는 매물이 없습니다.
+            <br />
+            <button
+              onClick={() => {
+                setPriceF("전체");
+                setAreaF("전체");
+                setRegion("전체");
+              }}
+              className="mt-3 rounded-full bg-brand px-4 py-1.5 text-xs font-semibold text-white"
+            >
+              필터 초기화
+            </button>
+          </div>
+        )}
         {shown.map((l) => (
           <Link
             key={l.id}
