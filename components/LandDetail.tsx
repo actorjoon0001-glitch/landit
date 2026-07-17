@@ -9,6 +9,7 @@ import {
   eok,
   won,
   landTotal,
+  landImage,
 } from "@/lib/data";
 
 function Fact({ label, value, ok }: { label: string; value: string; ok?: boolean }) {
@@ -48,18 +49,30 @@ export default function LandDetail({
         ← 지도로 돌아가기
       </Link>
 
-      <div className="mt-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-brand">{land.region}</p>
-          <h1 className="text-3xl font-black tracking-tight">{land.title}</h1>
-          <p className="mt-1 text-sm text-foreground/50">{land.address}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-xs text-foreground/40">대지 가격</p>
-          <p className="text-2xl font-black">{eok(land만)}</p>
-          <p className="text-xs text-foreground/40">
-            {land.areaPy}평 · 평당 {land.pricePerPy}만원
-          </p>
+      {/* 시네마틱 히어로 배너 */}
+      <div className="relative mt-4 h-64 overflow-hidden rounded-3xl sm:h-80">
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url(${landImage(land)})` }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-black/10" />
+        <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-6 text-white">
+          <div>
+            <span className="inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-bold backdrop-blur">
+              {land.region} · {land.view}
+            </span>
+            <h1 className="mt-3 text-3xl font-black tracking-tight drop-shadow sm:text-4xl">
+              {land.title}
+            </h1>
+            <p className="mt-1 text-sm text-white/75">{land.address}</p>
+          </div>
+          <div className="rounded-2xl bg-white/95 px-5 py-3 text-right shadow-lg backdrop-blur">
+            <p className="text-[11px] text-foreground/50">대지 가격</p>
+            <p className="text-2xl font-black text-foreground">{eok(land만)}</p>
+            <p className="text-[11px] text-foreground/40">
+              {land.areaPy}평 · 평당 {land.pricePerPy}만원
+            </p>
+          </div>
         </div>
       </div>
 
