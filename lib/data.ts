@@ -46,8 +46,6 @@ export interface Land {
 export const MODULAR_HOUSES: ModularHouse[] = [
   {
     // 실제 판매 중인 19평 모델 (크림 사이딩 + 박공지붕 + 포치데크)
-    // 실사 렌더: public/img/stay-19-*.webp 추가 후 renders에 등록
-    // 3D 모델: public/models/stay-19.glb 추가 후 model에 등록
     id: "m-stay-19",
     name: "Stay 19",
     builder: "LANDIT 파트너",
@@ -59,6 +57,8 @@ export const MODULAR_HOUSES: ModularHouse[] = [
     style: "클래식 사이딩 포치",
     color: "#efe9dc",
     roof: "gable",
+    model: "/models/stay-19.glb",
+    renders: ["/img/stay-19-1.webp", "/img/stay-19-2.webp", "/img/stay-19-3.webp"],
   },
   {
     id: "m-nordic-24",
