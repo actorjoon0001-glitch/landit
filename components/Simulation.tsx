@@ -298,7 +298,8 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
       }
 
       // 1. 토목 — 영구: 정지 패드·옹벽 / 임시(토목 단계에서만): 흙더미·말뚝·줄·자국·고깔·자갈
-      g1.add(box(4, 0.14, 4, "#b5946a", [0, 0.07, 0], { rough: 1, map: dirtTex, cast: false }));
+      // 패드는 슬래브(4x4)보다 살짝 작게 — 옆면 겹침(z-fighting) 방지
+      g1.add(box(3.9, 0.14, 3.9, "#b5946a", [0, 0.069, 0], { rough: 1, map: dirtTex, cast: false }));
       g1.add(box(4.2, 0.58, 0.24, "#c2bdb0", [0, 0.29, 2.95], { rough: 0.95, map: concreteTex }));
       const pile = (x: number, z: number, h: number) => {
         const c = new THREE.Mesh(new THREE.ConeGeometry(0.7, h, 8), mat("#a8875c", { flat: true, rough: 1, map: dirtTex }));
@@ -380,10 +381,11 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         gExcav.add(ex);
       }
 
-      // 2. 기초 — 콘크리트 슬래브(상시) + 거푸집·철근·앵커볼트(기초 단계 전용)
+      // 2. 기초 — 콘크리트 슬래브(상시) + 피어·거푸집·철근·앵커볼트(기초 단계 전용)
       g2.add(box(4, 0.5, 4, "#cfcabf", [0, 0.25, 0], { rough: 0.9, map: concreteTex }));
+      // 피어는 주택 설치 후 주택 아래에 깔리므로 기초 단계에서만 표시
       [-1.2, 0, 1.2].forEach((x) =>
-        [-1.2, 1.2].forEach((z) => g2.add(box(0.28, 0.14, 0.28, "#b7b1a4", [x, 0.57, z], { rough: 0.9 })))
+        [-1.2, 1.2].forEach((z) => gFound.add(box(0.28, 0.14, 0.28, "#b7b1a4", [x, 0.57, z], { rough: 0.9 })))
       );
       {
         // 목재 거푸집(슬래브 둘레 판재 + 지지 말뚝)
