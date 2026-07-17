@@ -142,10 +142,6 @@ body {
   font-size: 10px;
 }
 
-/* 지도(회색 미니멀) 무채색 필터 — 위성 모드에선 미적용. 마커/팝업은 캔버스 밖이라 영향 없음 */
-.lm-muted .maplibregl-canvas {
-  filter: saturate(0.5) brightness(1.05) contrast(0.96);
-}
 .lm-popup-region {
   font-size: 11px;
   font-weight: 600;
