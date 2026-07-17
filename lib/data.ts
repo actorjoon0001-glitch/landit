@@ -45,12 +45,12 @@ export interface Land {
 
 export const MODULAR_HOUSES: ModularHouse[] = [
   {
-    // 세움 실제 판매 19평 모델 (크림 사이딩 + 박공지붕 + 포치데크)
-    // 실사 렌더: public/img/seum-19-*.webp 추가 후 renders에 등록
-    // 3D 모델: public/models/seum-19.glb 추가 후 model에 등록
-    id: "m-seum-19",
-    name: "세움 19",
-    builder: "세움",
+    // 실제 판매 중인 19평 모델 (크림 사이딩 + 박공지붕 + 포치데크)
+    // 실사 렌더: public/img/stay-19-*.webp 추가 후 renders에 등록
+    // 3D 모델: public/models/stay-19.glb 추가 후 model에 등록
+    id: "m-stay-19",
+    name: "Stay 19",
+    builder: "LANDIT 파트너",
     areaPy: 19,
     bedrooms: 2,
     bathrooms: 1,

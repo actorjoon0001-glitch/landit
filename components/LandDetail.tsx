@@ -122,7 +122,7 @@ export default function LandDetail({
                         <span className="h-4 w-4 rounded" style={{ background: h.color }} />
                       )}
                       <span className="text-sm font-bold">{h.name}</span>
-                      {h.builder === "세움" && (
+                      {h.id === "m-stay-19" && (
                         <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[9px] font-bold text-brand">
                           실제 판매 모델
                         </span>
