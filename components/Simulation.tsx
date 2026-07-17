@@ -217,7 +217,8 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         return g;
       };
       const g0 = mkGroup("g0");
-      const g1 = mkGroup("g1");
+      const g1 = mkGroup("g1"); // 영구 요소(정지 패드·옹벽)
+      const gCivilTemp = mkGroup("gCivilTemp"); // 토목 단계 임시 요소(흙더미·말뚝·고깔 등)
       const gExcav = mkGroup("gExcav");
       const g2 = mkGroup("g2");
       const gFound = mkGroup("gFound"); // 기초 단계 전용(거푸집·철근)
@@ -296,7 +297,7 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         }
       }
 
-      // 1. 토목 — 정지 패드·옹벽·측량말뚝·수평줄·타이어자국·안전고깔·자갈
+      // 1. 토목 — 영구: 정지 패드·옹벽 / 임시(토목 단계에서만): 흙더미·말뚝·줄·자국·고깔·자갈
       g1.add(box(4, 0.14, 4, "#b5946a", [0, 0.07, 0], { rough: 1, map: dirtTex, cast: false }));
       g1.add(box(4.2, 0.58, 0.24, "#c2bdb0", [0, 0.29, 2.95], { rough: 0.95, map: concreteTex }));
       const pile = (x: number, z: number, h: number) => {
@@ -306,8 +307,8 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         c.receiveShadow = true;
         return c;
       };
-      g1.add(pile(-2.6, -0.4, 0.9));
-      g1.add(pile(2.7, -1.0, 0.75));
+      gCivilTemp.add(pile(-2.6, -0.4, 0.9));
+      gCivilTemp.add(pile(2.7, -1.0, 0.75));
       {
         // 측량 말뚝(모서리 4개) + 형광 수평줄
         const stakeMat = mat("#c8a06a", { rough: 0.9 });
@@ -317,10 +318,10 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
           const st = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.045, 0.5, 6), stakeMat);
           st.position.set(sx, 0.32, sz);
           st.castShadow = true;
-          g1.add(st);
+          gCivilTemp.add(st);
           const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.06, 6), capMat);
           cap.position.set(sx, 0.58, sz);
-          g1.add(cap);
+          gCivilTemp.add(cap);
         });
         const lineMat = mat("#ffd166", { rough: 0.5, emissive: "#ffd166", emi: 0.35 });
         for (let i = 0; i < 4; i++) {
@@ -330,7 +331,7 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
           const line = new THREE.Mesh(new THREE.BoxGeometry(len, 0.012, 0.012), lineMat);
           line.position.set((ax + bx) / 2, 0.5, (az + bz) / 2);
           line.rotation.y = Math.atan2(az - bz, bx - ax);
-          g1.add(line);
+          gCivilTemp.add(line);
         }
         // 타이어 자국(궤도 흔적)
         const trackMat = mat("#8a6f4d", { rough: 1 });
@@ -340,7 +341,7 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
           tr.rotation.z = 0.35;
           tr.position.set(0.35 + off * Math.cos(0.35), 0.145, 0.15 + off * Math.sin(-0.35));
           tr.receiveShadow = true;
-          g1.add(tr);
+          gCivilTemp.add(tr);
         });
         // 안전 고깔
         const coneMat = mat("#ff6a2a", { rough: 0.55 });
@@ -348,21 +349,21 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         ([[-1.6, 2.55], [1.7, 2.55]] as const).forEach(([cx, cz]) => {
           const base = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.03, 0.22), coneMat);
           base.position.set(cx, 0.155, cz);
-          g1.add(base);
+          gCivilTemp.add(base);
           const cone = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.28, 10), coneMat);
           cone.position.set(cx, 0.31, cz);
           cone.castShadow = true;
-          g1.add(cone);
+          gCivilTemp.add(cone);
           const band = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.05, 10), bandMat);
           band.position.set(cx, 0.31, cz);
-          g1.add(band);
+          gCivilTemp.add(band);
         });
         // 자갈 더미
         const gravel = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.34, 9), mat("#9d9890", { flat: true, rough: 1, map: concreteTex }));
         gravel.position.set(-2.5, 0.17, 1.6);
         gravel.castShadow = true;
         gravel.receiveShadow = true;
-        g1.add(gravel);
+        gCivilTemp.add(gravel);
       }
       {
         const ex = new THREE.Group();
@@ -752,6 +753,7 @@ export default function Simulation({ land, house }: { land: Land; house: Modular
         };
         set(g0, n === 0);
         set(g1, n >= 1);
+        set(gCivilTemp, n === 1); // 흙더미·말뚝·고깔 등은 토목 단계에서만
         set(gExcav, n === 1);
         set(g2, n >= 2);
         set(gFound, n === 2);
