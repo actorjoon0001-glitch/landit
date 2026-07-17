@@ -54,7 +54,7 @@ export const MODULAR_HOUSES: ModularHouse[] = [
     areaPy: 19,
     bedrooms: 2,
     bathrooms: 1,
-    priceKRW: 125_000_000, // 예상가 — 실제 판매가 확인 후 교체
+    priceKRW: 95_000_000, // 실판매가 (제조사 공식 판매가 기준)
     buildWeeks: 6,
     style: "클래식 사이딩 포치",
     color: "#efe9dc",
