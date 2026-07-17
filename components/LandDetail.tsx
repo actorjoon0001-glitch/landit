@@ -104,25 +104,35 @@ export default function LandDetail({
                 <button
                   key={h.id}
                   onClick={() => setSelected(h)}
-                  className={`rounded-xl border p-3 text-left transition ${
+                  className={`overflow-hidden rounded-xl border text-left transition ${
                     selected.id === h.id
                       ? "border-brand bg-brand/5"
                       : "border-black/5 hover:border-black/15"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="h-4 w-4 rounded"
-                      style={{ background: h.color }}
+                  {h.renders?.[0] && (
+                    <div
+                      className="h-20 w-full bg-cover bg-center"
+                      style={{ backgroundImage: `url(${h.renders[0]})` }}
                     />
-                    <span className="text-sm font-bold">{h.name}</span>
+                  )}
+                  <div className="p-3">
+                    <div className="flex items-center gap-2">
+                      {!h.renders?.[0] && (
+                        <span className="h-4 w-4 rounded" style={{ background: h.color }} />
+                      )}
+                      <span className="text-sm font-bold">{h.name}</span>
+                      {h.builder === "세움" && (
+                        <span className="rounded-full bg-brand/10 px-1.5 py-0.5 text-[9px] font-bold text-brand">
+                          실제 판매 모델
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] text-foreground/50">
+                      {h.style} · {h.areaPy}평 · 방 {h.bedrooms}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-brand">{eok(h.priceKRW)}</p>
                   </div>
-                  <p className="mt-1 text-[11px] text-foreground/50">
-                    {h.style} · {h.areaPy}평 · 방 {h.bedrooms}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-brand">
-                    {eok(h.priceKRW)}
-                  </p>
                 </button>
               ))}
             </div>
