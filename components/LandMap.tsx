@@ -54,45 +54,54 @@ const AREA_FILTERS: { key: string; test: (py: number) => boolean }[] = [
   { key: "250평~", test: (a) => a > 250 },
 ];
 
-function buildStyle(): maplibregl.StyleSpecification {
+// 베이스맵: OpenFreeMap 벡터 타일(무료·키 불필요) — 선명한 모던 카토그래피.
+// 위성·지적도는 V-World 래스터를 오버레이 레이어로 얹는다.
+const BASE_STYLE_URL = "https://tiles.openfreemap.org/styles/liberty";
+
+// 스타일 로드 후 V-World 오버레이(위성/하이브리드/지적도) 추가
+function addVworldOverlays(map: maplibregl.Map) {
+  if (!HAS_VW) return;
   const vw = (layer: string, ext: string) =>
     `https://api.vworld.kr/req/wmts/1.0.0/${VWORLD_KEY}/${layer}/{z}/{y}/{x}.${ext}`;
   const domain = typeof window !== "undefined" ? window.location.origin : "";
+  const addRaster = (id: string, tiles: string[], attribution?: string) => {
+    if (map.getSource(id)) return;
+    map.addSource(id, { type: "raster", tiles, tileSize: 256, attribution });
+    map.addLayer({ id: `${id}-l`, type: "raster", source: id, layout: { visibility: "none" } });
+  };
+  addRaster("sat", [vw("Satellite", "jpeg")], "© 국토교통부 V-World");
+  addRaster("hybrid", [vw("Hybrid", "png")]);
+  addRaster("cadastral", [
+    `https://api.vworld.kr/req/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=lp_pa_cbnd_bubun&STYLES=lp_pa_cbnd_bubun&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE&KEY=${VWORLD_KEY}&DOMAIN=${domain}`,
+  ]);
+}
 
-  const sources: maplibregl.StyleSpecification["sources"] = {};
-  const layers: maplibregl.LayerSpecification[] = [];
-
-  if (HAS_VW) {
-    // 검증된 Base 타일 사용 (세련된 무채색 느낌은 CSS 필터로 처리 — lm-muted)
-    sources.base = { type: "raster", tiles: [vw("Base", "png")], tileSize: 256, attribution: "© 국토교통부 V-World" };
-    sources.sat = { type: "raster", tiles: [vw("Satellite", "jpeg")], tileSize: 256, attribution: "© 국토교통부 V-World" };
-    sources.hybrid = { type: "raster", tiles: [vw("Hybrid", "png")], tileSize: 256 };
-    sources.cadastral = {
-      type: "raster",
-      tiles: [
-        `https://api.vworld.kr/req/wms?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0&LAYERS=lp_pa_cbnd_bubun&STYLES=lp_pa_cbnd_bubun&CRS=EPSG:3857&BBOX={bbox-epsg-3857}&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE&KEY=${VWORLD_KEY}&DOMAIN=${domain}`,
-      ],
-      tileSize: 256,
+// 한글 라벨 강제 + LANDIT 브랜드 톤(물색·공원) 오버라이드
+function refineBaseStyle(map: maplibregl.Map) {
+  try {
+    const style = map.getStyle();
+    style.layers?.forEach((l) => {
+      if (l.type === "symbol") {
+        const tf = map.getLayoutProperty(l.id, "text-field");
+        if (tf) {
+          map.setLayoutProperty(l.id, "text-field", [
+            "coalesce",
+            ["get", "name:ko"],
+            ["get", "name"],
+          ]);
+        }
+      }
+    });
+    const paint = (id: string, prop: string, v: unknown) => {
+      if (map.getLayer(id)) map.setPaintProperty(id, prop, v);
     };
-    layers.push({ id: "base-l", type: "raster", source: "base", layout: { visibility: "visible" } });
-    layers.push({ id: "sat-l", type: "raster", source: "sat", layout: { visibility: "none" } });
-    layers.push({ id: "hybrid-l", type: "raster", source: "hybrid", layout: { visibility: "none" } });
-    layers.push({ id: "cad-l", type: "raster", source: "cadastral", layout: { visibility: "none" } });
-  } else {
-    sources.base = {
-      type: "raster",
-      tiles: [
-        "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://b.tile.openstreetmap.org/{z}/{x}/{y}.png",
-        "https://c.tile.openstreetmap.org/{z}/{x}/{y}.png",
-      ],
-      tileSize: 256,
-      attribution: "© OpenStreetMap 기여자",
-    };
-    layers.push({ id: "base-l", type: "raster", source: "base", layout: { visibility: "visible" } });
+    paint("water", "fill-color", "#b9d0dc");
+    paint("park", "fill-color", "#d9e8d2");
+    paint("landcover-grass", "fill-color", "#dcead4");
+    paint("landcover-wood", "fill-color", "#cfe0c4");
+  } catch {
+    /* 스타일 구조가 달라도 지도는 정상 동작 */
   }
-
-  return { version: 8, sources, layers };
 }
 
 export default function LandMap() {
@@ -133,7 +142,7 @@ export default function LandMap() {
 
       const map = new gl.Map({
         container: mapEl.current,
-        style: buildStyle(),
+        style: BASE_STYLE_URL,
         bounds: KOREA_BOUNDS,
         fitBoundsOptions: { padding: 24 },
         maxBounds: [
@@ -148,6 +157,11 @@ export default function LandMap() {
       map.addControl(new gl.NavigationControl({ showCompass: false }), "top-left");
       map.dragRotate.disable();
       map.touchZoomRotate.disableRotation();
+
+      map.on("load", () => {
+        addVworldOverlays(map);
+        refineBaseStyle(map);
+      });
 
       // 마커는 타일 로드와 무관하게 즉시 추가 (지도 생성 직후 배치 가능)
       LANDS.forEach((l) => {
@@ -221,7 +235,7 @@ export default function LandMap() {
     const set = (id: string, v: boolean) => {
       if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", v ? "visible" : "none");
     };
-    set("base-l", mode === "map");
+    // 벡터 베이스는 항상 유지, 위성 모드에서는 V-World 래스터를 위에 표시
     set("sat-l", mode === "sat");
     set("hybrid-l", mode === "sat");
     set("cad-l", cadastral);
@@ -289,9 +303,7 @@ export default function LandMap() {
         <div className="relative">
           <div
             ref={mapEl}
-            className={`h-[460px] w-full overflow-hidden rounded-2xl border border-black/5 shadow-sm sm:h-[560px] ${
-              mode === "map" ? "lm-muted" : ""
-            }`}
+            className="h-[460px] w-full overflow-hidden rounded-2xl border border-black/5 shadow-sm sm:h-[560px]"
             aria-label="매물 토지 지도"
           />
           {!ready && (
@@ -335,7 +347,7 @@ export default function LandMap() {
           )}
         </div>
         <p className="mt-2 text-center text-xs text-foreground/40">
-          핀을 누르면 매물 정보가 열립니다 · {HAS_VW ? "지도 © 국토교통부 V-World" : "지도 © OpenStreetMap"}
+          핀을 누르면 매물 정보가 열립니다 · 지도 © OpenFreeMap·OSM{HAS_VW ? " · 위성·지적도 © 국토교통부 V-World" : ""}
         </p>
       </div>
 
